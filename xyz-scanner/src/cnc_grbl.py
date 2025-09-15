@@ -1,7 +1,7 @@
 '''
-m3d.py
-Module for controlling the M3D printer over a serial port
-Uses gcode commands to control the printer
+cnc-grbl.py
+Module for controlling a grbl 1.1 controller  over a serial port
+Uses grbl commands for
 Author: Greg d'Eon
 Date: May 2-3, 2016
 '''
@@ -11,7 +11,7 @@ from xyz_controller import *
 import serial
 import time
 
-class M3D(XYZ_Controller):
+class CNC_Grbl: # (XYZ_Controller):
     # Constructor
     def __init__(self):
         self.serialPort = None
@@ -23,7 +23,7 @@ class M3D(XYZ_Controller):
     
         Args:
             port (string): the COM port to be used (ex: "COM4")
-        Returns:
+        Returns:printer
             true if the printer is set up; otherwise false
         """
         
@@ -73,23 +73,22 @@ class M3D(XYZ_Controller):
             
     #     ###     return False
  
-    # def __disconnect(self):
-    #     """
-    #     Closes the serial connection.
-    #     """
-    #     if self.serialPort != None:
-    #         self.serialPort.close()
-    #         self.serialPort = None
+    def __disconnect(self):
+        """
+        Closes the serial connection.
+        """
+        if self.serialPort != None:
+            self.serialPort.close()
+            self.serialPort = None
     
      
     # Movement functions    
-    # def __sendCommand(self, command):
-    # def __sendCommand(self, port):
-    #     """
-    #     Sends the string "command" to the printer.
-    #     Blocks until an "ok" reply comes back.
-    #     """
-    #     pass 
+    def __sendCommand(self, command):
+        """
+        Sends the string "command" to the printer.
+        Blocks until an "ok" reply comes back.
+        """
+        pass 
 
 # #     ### print "Setting up..."
 # #     test.start("COM53")
@@ -106,23 +105,23 @@ class M3D(XYZ_Controller):
 #             command (string): the command to be sent
 #         """
         
-        # # Make sure we're not sitting on any data and send the command
-        # if hasattr(self.serialPort, 'flushInput'):
-        #     self.serialPort.flushInput()
-        # else:
-        #     self.serialPort.reset_input_buffer()
-        # self.serialPort.write(command)
+        # Make sure we're not sitting on any data and send the command
+        if hasattr(self.serialPort, 'flushInput'):
+            self.serialPort.flushInput()
+        else:
+            self.serialPort.reset_input_buffer()
+        self.serialPort.write(command)
         
-        # #time.sleep(1.5)
-        # # print  (rx)
+        #time.sleep(1.5)
+        # print  (rx)
 
-        # # Wait until a reply comes back
-        # if (hasattr(self.serialPort, 'in_waiting')):
-        #     while(self.serialPort.in_waiting == 0):
-        #         pass
-        # else:
-        #     while(self.serialPort.inWaiting() == 0):
-        #         pass
+        # Wait until a reply comes back
+        if (hasattr(self.serialPort, 'in_waiting')):
+            while(self.serialPort.in_waiting == 0):
+                pass
+        else:
+            while(self.serialPort.inWaiting() == 0):
+                pass
 
     def home(self):
         command = "$H\r"
