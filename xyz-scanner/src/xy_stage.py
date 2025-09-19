@@ -1,33 +1,15 @@
-'''
-xyscan.py
-Uses a DSA815 with a loop antenna probe attached to an M3D printer head
-to scan for EM signals over the surface of the chip.
-
-Author: Greg d'Eon
-Date: May 3-4, 2016
-'''
-
 import sys
-
-print("Python version:")
-print(sys.version)
-
-print("\nVersion info:")
-print(sys.version_info)
-
+import argparse
 
 # Target Test
 from stm32h7_swd_target import *
 
-# Controllers
-#  from m3d import *
+# Tools control
 from cnc_grbl import *
-# from emfitarget import *
 from emfiblaster import *
-from PIL import Image
 
-
-# import srammap
+# NewAE GPL License files. 
+import srammap
 import naeusb as NAE
 
 # Utilities
@@ -39,108 +21,169 @@ import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 import numpy as np
 import pickle
+from PIL import Image
 
-# Settables
-debug_xyz_stage_flag = True
+# Global Settables - TODO: Move this and calibration data etc to config file. 
+debug_xyz_stage_flag = False
+safe_debug = True
 create_bitmap_flag = False
 
 
-def plotHeatmap(data, x_min, x_max, y_min, y_max, filename):
-    """
-    Plot a heatmap.
-    
-    Args:
-        Data: a 2D list of the data to be plotted
-        x_min, y_min: the minimum coordinate of any data point
-        x_max, y_max: the maximum coordinate any data point
-        filename: where to save this image
-    """
-    
-    # Generate x and y lists
-    x_points = numpy.linspace(x_min, x_max, len(data[0]))
-    y_points = numpy.linspace(y_min, y_max, len(data))
-    
-    x, y = numpy.meshgrid(x_points, y_points)
+# Fake scan array for testing the display of results - bmp, graph, etc. 
+debug_scan_results_array = np.array([
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 2, 2, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 2, 2, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 2, 2, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ],
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
+])
 
-    # Plot heatmap
-    fig = plt.figure()
-    plt.pcolor(x, y, data, cmap=plt.cm.Blues)
-    plt.axis([x_min, x_max, y_min, y_max])
-    plt.colorbar()
-    plt.xlabel("Frequency / Hz")
-    plt.ylabel("Y coordinate / mm")
-    fig.savefig(filename, bbox_inches="tight")
 
+def plotScanResults(result_array):
+    plt.imshow(result_array, cmap='viridis') #investigate np.meshgrid
+    # plt.matshow(result_array)
+    plt.colorbar(label='Value')
+    plt.title('2D Scan Results')
+    plt.show()
+
+def testMeshGrid(result_array):
+    # Create sample x, y, and 2D array data
+    x = np.linespace(0, 20, 20)
+    y = np.linespace(0, 20, 20)
+    X, Y = np.meshgrid(x, y)
+    Z = np.sin(X) + np.cos(Y)
+
+    # Create a color plot using pcolormesh
+    plt.pcolormesh(X, Y, Z, cmap='RdBu')
+    plt.colorbar(label='Value')
+    plt.title('2D Array Visualization with pcolormesh')
+    plt.xlabel('X-axis')
+    plt.ylabel('Y-axis')
+    plt.show()
     
-# Main script
+# Main 
 if __name__ == '__main__':
+
+    print("Python version:")
+    print(sys.version)
+
     # flags
     use_raw_method = True
     do_plot = True
 
-    # Scan layout
-    x_step = 2.0      # Step size, in mm
-    y_step = 2.0      # Step size, in mm
-    x_steps = 21      # Number of steps to take 20
-    y_steps = 19      # Number of steps to take 40
-    
-    x_max = x_step * x_steps    # Size of the grid we're measuring
-    y_max = y_step * y_steps    # Note that we'll never reach x = x_max
-    
-    print()
+    plotScanResults(debug_scan_results_array)
+    sys.exit()
+
+    # Scan layout TODO: Delete me.
+    # x_step = 2.0      # Step size, in mm
+    # y_step = 2.0      # Step size, in mm
+    # x_steps = 21      # Number of steps to take 20
+    # y_steps = 19      # Number of steps to take 40
+    # x_max = x_step * x_steps    # Size of the grid we're measuring
+    # y_max = y_step * y_steps    # Note that we'll never reach x = x_max
+
+    # Command line argument parsing
+    parser = argparse.ArgumentParser("XY Stage with specific targets")
+    parser.add_argument('-p', '--emp',        type=str, required=True, help='emp pulse serial port address')
+    parser.add_argument('-t', '--target',     type=str, required=True, help='emp pulse serial port address')
+    parser.add_argument('-c', '--controller', type=str, required=True, help='xyz stage controller serial port address')
+    args = parser.parse_args()    
+
+    print(args.emp) 
+
     print("Choose a target: ")
-    print("   (1) EMFI Target or NewAE Ballistic Gel")
-    print("   (2) STM32H7 SWD Target")
-    print("   (3) Arduino ATMEGA 2650 (SAM-ICE JTAG)")
+    print("   (1) EMFI Target or NewAE Ballistic Gel silicon die recon scan bitmap)")
+    print("   (2) STM32H7 Target (SWD Mode Debugger)")
+    print("   (3) Arduino ATMEGA 2650 Target (SAM-ICE JTAG)")
+    print("   (4) Xilinx Zynq XC7 Series (XSDB/Vivado)")
+    print("   (5) Xilinx Zynq Ultrascale+ (XSDB/Vivado)")
+    print("   (6) Unnamed ARM64 Tablet Bootloader (Saleae Logic 2 Python Automation API)")
+    print("   (999) Single Shot Probe tester into EMFI Target SRAM Board to measure view spread")
     target_type = input()
 
-    print()
-    input("Enter x-axis chip dimension(mm): ")
-    input("Enter y-axis chip dimension(mm): ")
-    input("Enter step resolution (mm): ")
-    
+    if (target_type != 999):
+        print()
+        # TODO: Move everything to float eventually. It just complicates things for the moment.... 
+        value = input("Enter x-axis chip dimension(mm): ")
+        x_width_mm = int(value)
+        value = input("Enter y-axis chip dimension(mm): ")
+        y_width_mm = int(value)
+        value = input("Enter x-step resolution (mm): ")
+        x_stepsize_mm = int(value)
+        value = input("Enter y-step resolution (mm): ")
+        y_stepsize_mm = int(value)
+
     print()
     print("Enter EMP Pulse Voltage")
     print("   (1) 350 Volts")
     print("   (2) 550 Volts")
-    print("   (3) 750 Volts")
-    print("   (4) 950 Volts")
-    voltage = input()
+    print("   (3) 600 Volts")
+    print("   (4) 672 Volts")      
+    print("   (5) 750 Volts")
+    print("   (6) 950 Volts")
+    value = input()
+    voltage = int(value)
+
+    input("\n *** Hit enter to start test and arm EMFI Blaster ***\n")
 
     # CNC Controller 
     cnc_controller = CNC_Grbl()
-    cnc_controller.start('/dev/ttyUSB0')
+    cnc_controller.start(args.controller)
     # cnc_controller.setRelative()
     if debug_xyz_stage_flag == False:
-        # Startup and initialize the EMP Target
-        # TODO: Create SRAM error matrix.
-        #    emfi_target = EmfiTarget()
-        #    emfi_target.con()
-
-# Use This:
-        target = Stm32hf_Target_Tests()
-        # target.setup()
+        if target_type:      
+            # Startup and initialize the EMP Target
+            target = Stm32h7_Target_Tests()
+            target.setup()
 
         # EMFI Blaster
         emp_pulse = EmfiBlaster()
-        emp_pulse.connect()
-        emp_pulse.disarm()
+
+        retValue = emp_pulse.connect(args.emp)
+        if retValue != True:
+            cnc_controller.disconnect()
+            print("EMFI Pulse Device failed to open")
+            sys.exit()
 
         # Everthing is setup and aiming at the target. 
         # **** Danger: Arming High Voltage ****
-        print("*** Danger: Arming EMP Blaster ***")
-        emp_pulse.arm() # TODO: add a power setting parameter
-        time.sleep(10)
-        emp_pulse.disarm()
+        if safe_debug:
+            emp_pulse.disarm() # just in case this was left in ARMING position on a different run
+            print("*** Safe Mode - No Arming of EMFI Blaster ***")
+        else:
+            print("*** Danger: Arming EMP Blaster ***")
+            emp_pulse.arm() # TODO: add a power setting parameter
+            time.sleep(3)  # Give time to charge up capacitors
 
     firstTimeReading = True
 
+    # Create a 2D array of chip scan results.
+    result_row = 0
+    result_col = 0
+    scan_results_array = np.ones((x_width_mm // x_stepsize_mm, y_width_mm // y_stepsize_mm))
+    
     # Scan the chip
     positiveMovment = True
-    for y_counts in range(y_steps):
-        for x_counts in range(x_steps):
+    for y_counts in range(y_width_mm // y_stepsize_mm):
+        for x_counts in range(x_width_mm // x_stepsize_mm):
 
-            # initialize target, fire an EMP pulse, measure, repeat.
+            # if not just testing xy-stage - initialize target, fire an EMP pulse, measure, repeat without
+            # the user getting shocked by the EMP Blaster.
             if debug_xyz_stage_flag == False:
                 # Step 1: Re-set the EMFI Target SRAM to random data.
                 # if use_raw_method:
@@ -151,95 +194,45 @@ if __name__ == '__main__':
                     target.load_target()
 
                 # Step 2: Fire EMP Pulse
+                if safe_debug != True:
+                    emp_pulse.shoot() # TODO: add a power setting parameter
 
-                # Boom.
-                emp_pulse.shoot() # TODO: add a power setting parameter
-                # Step 3: Check for EMFI SRAM errors
-                target.examine_target()
+                # Step 3: Check for EMFI bit flips and/or fatal errors. 
+                point_scan_result = target.examine_target()
 
-                # TODO: clear out statistics or keep a running tab.
+                # Step 4: Check if a USB failure due to CPU/SWD crash from EMP pulse
+                if (point_scan_result == target.EXAMINE_RET_CODE.USB_ERROR):
+                    # cycle reset button on SWD interface.
+                    None # TODO: restart target or something here. 
 
+                # Step 5: Populate SRAM Matrix with errors (or no errors).
+                scan_results_array[result_row][result_col] = point_scan_result
+                result_row += 1
+                result_col += 1
 
-                # if use_raw_method:
-                #     results = emfi_target.raw_test_compare()
-                # else:
-                #     results = emfi_target.seed_test_compare()
+                # TODO: Reset statistics (or may be keep a rolling tally?)
+                target.reset_sram_error_count()
+                target.reset_register_error_count()
+                target.reset_fatal_error_count()
 
-                # errdatay = results['errdatay']
-                # errdatax = results['errdatax']
-                # errorlist = results['errorlist']
-                
-                # # Since this is a pass over entire chip surface, Logical OR new data over the 
-                # # current list of multiple regions.
-                # if firstTimeReading == True:
-                #     errorlistScanResults = errorlist
-                #     firstTimeReading = False
-
-                # errorlistScanResults = np.bitwise_or(errorlistScanResults, errorlist)
-
-                # stopHere = 1
-
-                # if do_plot:
-                #     plt.plot(errdatax, errdatay, '.r')
-                #     plt.axis([0, 8192, 0, 4096])
-                #     plt.show()     
-                
-                # Step 4: Populate SRAM Matrix with Errors.
-
-            # Move EMP Blaster to next position    
+            # Move EMP Blaster to next blast and examine position    
             if positiveMovment == True:
-                cnc_controller.move(x_step, 0, 0)
+                cnc_controller.move(x_stepsize_mm, 0, 0)
             else:
-                cnc_controller.move(-1*x_step, 0, 0)
+                cnc_controller.move(-1*x_stepsize_mm, 0, 0)
             time.sleep(0.25)
 
-        cnc_controller.move(0, y_step, 0)
+        cnc_controller.move(0, y_stepsize_mm, 0)
+
         ### time.sleep(5)
         # Completed single x-direction scan. now to move 
         # opposite direction for next x-direction scan.
         positiveMovment = not positiveMovment
-    
-    # 3D list for scan result data
-    # scanData[x][y][f] is data at position (x, y) and frequency f
-    # (ie: one output from DSA is scanData[x][y])
-    #scanData = [[[0 for k in range(num_freqs+1)] 
-    #            for j in range(y_steps)] 
-    #            for i in range(x_steps)]
-    
 
-#    for x in range (7):
-#        cnc_controller.move(-1)
-
-    # Scan over the surface
-    # for y in range (y_steps):
-    #     for x in range (x_steps):
-    #         # Wait for the head to stop moving
-    #         time.sleep(0.1)
-            
-    #         # Scan with the spectrum analyzer
-    #         ### scanData[x][y] = scope.measure_trace()
-            
-    #         # Note where we are
-    #         ### print "x = {0:d}; y = {1:d}".format(x, y)
-    #         time.sleep(0.1)
+        # Save scan_array data. but also save metadata, stepsize, voltage, date, time, etc
+ ###   TODO: pickle.dump(scan_results_array, open("filename", "wb"))
     
-    #         # Move in x
-    #         if x == x_steps-1:
-    #             printer.move(x_step - x_max, 0)
-    #         else:
-    #             printer.move(x_step, 0)
-            
-                
-    #     # Move in y
-    #     if y == y_steps-1:
-    #         printer.move(0, y_step - y_max)
-    #     else:
-    #         printer.move(0, y_step)
-    
-    # printer.stop()
-
- ###   pickle.dump(scanData, open("scandata.p", "wb"))
-    
+    # This is a SRAM Chip memory recon-only method at the moment
     if create_bitmap_flag == True:
         # Create Bitmap
                 # adjust for one bit-per-pixel gray scale value
@@ -255,9 +248,5 @@ if __name__ == '__main__':
         image.save('my_bitmap.png')
         image.close()
     
-    # Plot scan data
-###    for i in range(len(scanData)):
-###         plotHeatmap(scanData[i], f_low, f_hi, 0, y_max - y_step, "image{}".format(i))
-
     if debug_xyz_stage_flag == False:
         emp_pulse.disarm()

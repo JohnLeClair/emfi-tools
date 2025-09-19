@@ -6,7 +6,7 @@ Author: Greg d'Eon
 Date: May 2-3, 2016
 '''
 
-from xyz_controller import *
+# from xyz_controller import *
 
 import serial
 import time
@@ -36,7 +36,7 @@ class CNC_Grbl: # (XYZ_Controller):
  
     def __connect(self, port, baud):
         """
-        Opens a serial connection with the M3D printer.
+        Opens a serial connection with the grbl 1.1 cnc controller.
        
         Args:
              port: the COM port to /destructor: "COM4")
