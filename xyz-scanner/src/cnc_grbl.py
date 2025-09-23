@@ -19,12 +19,12 @@ class CNC_Grbl: # (XYZ_Controller):
     # Setup functions
     def start(self, port):
         """
-        Attempts to set up the M3D printer.
+        Attempts to set up the CNC Controller.
     
         Args:
-            port (string): the COM port to be used (ex: "COM4")
+            port (string): the COM port to be used (ex: "/dev/ttyUSB0")
         Returns:printer
-            true if the printer is set up; otherwise false
+            True if the printer is set up; otherwise False
         """
         
         baud = 115200
@@ -34,6 +34,9 @@ class CNC_Grbl: # (XYZ_Controller):
             
         return True
  
+    def isConnected (self):
+        return self.serialPort.isOpen()
+
     def __connect(self, port, baud):
         """
         Opens a serial connection with the grbl 1.1 cnc controller.
@@ -146,11 +149,11 @@ class CNC_Grbl: # (XYZ_Controller):
         
         """
         # Assuming controller has $100=1000 and $101=1000 and $1002=400
-        x = x / 20.000
-        y = y / 20.000
+        # TODO: need a better calibration constant. 
+        x = x / 10.000
+        y = y / 10.000
         # z = ???
 
-        # Use G0 to100 move
         command = "G21 G91 X" + str(x) + " Y" + str(y) + " Z" + str(z) + " F50" + "\r"
         # command = "G21G91X2.05F50\r"
         self.__sendCommand(bytes(command, 'utf-8'))

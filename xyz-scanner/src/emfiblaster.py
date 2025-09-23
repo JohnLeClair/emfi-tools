@@ -13,7 +13,7 @@ class EmfiBlaster:
 
     command_arm_off = [1, 0]
     command_arm_on = [1, 1]
-
+    command_shoot = [4, 0, 50]
     
 
     def __init__(self):
@@ -70,3 +70,6 @@ class EmfiBlaster:
 
     def disarm(self):
         self.serial_port.write(bytes(self.command_arm_off))
+    
+    def shoot(self):
+        self.serial_port.write(bytes(self.command_shoot))

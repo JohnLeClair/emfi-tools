@@ -1,4 +1,6 @@
 import swd
+import time
+import serial
 
 ##### STM32H7 Memory-Map
 # SRAM1 = 0x24000000, 512k
@@ -14,16 +16,68 @@ class Stm32h7_Target_Tests:
         SRAM_BIT_ERRORS     = 0x4     # Target's SRAM Bank comparision ended with bit flips.
         REGISTER_BIT_ERRORS = 0x8     # Target's Register File comparison ended with bit flips.
 
-    def __init__(self):
+    def __init__(self, relay_device_port):
         self.dev = None
         self.cm = None
-        self.initialized = False
-        self.reinitialize_target = True
+        self.initialized = False                       # SWD debugger has been initialized.
+        self.reinitialize_target = True                # The contents of SRAM or Registers needs to be reinitalized. 
+        self.relay_device_port = relay_device_port     # Serial-controlled relay device to cycle SWD reset pins.
 
-        # multiple run accumulation counters
+        # Accumulated error counters
         self.sram_errors_count = 0     
         self.register_errors_count = 0
         self.fatal_error_count = 0
+
+    def reconnect(self):
+        # USB has been reenumerated. Reinitialize the SWD connection. 
+        # get version. if success, no re-initialization necesesary else try calling setup(). 
+        print ("Reconnecting and reinitializing target state ... ")
+        self.setup()
+
+    def reset_jtag_swd_device(self):
+        # toggle SWD reset pins
+        # NOYITO 4-Channel Micro USB Relay Module USB Smart Control Switch USB Intelligent Control Switch
+        # Just open/close serial controlled relay device each time. Perhaps move this code to initialization of target.
+        # Make it a TODO: that probably never happens.
+        retValue = True
+
+        try:
+            print("Reseting SWD Debugger ...")
+            serial_port = serial.Serial(self.relay_device_port, 9600)
+
+            relay_command_closed = [0xa0, 0x04, 0x01, 0xa5]
+            relay_command_open = [0xa0, 0x04, 0x00, 0xa4]
+
+            serial_port.write(bytes(relay_command_closed)) 
+            time.sleep(1)
+            serial_port.write(bytes(relay_command_open)) 
+
+            serial_port.close()    
+
+        except serial.SerialException as ex:
+            print("Relay Control Serial Port failed...")
+            retValue = False
+
+        # Reset all initialization flags.
+        self.dev = None
+        self.cm = None
+        self.initialized = False
+        self.reinitialize_target = True        
+
+        return retValue
+
+    def reset_sram_error_count(self):
+        self.sram_errors_count = 0
+
+    def reset_register_error_count(self):
+        self.register_errors_count = 0        
+
+    def reset_fatal_error_count(self):
+        self.fatal_error_count
+
+    def reload_target(self):
+        return self.reinitialize_target
+
 
     def setup(self):
         if (self.initialized == False):
@@ -38,23 +92,6 @@ class Stm32h7_Target_Tests:
             print("Target ID Code: ", hex(self.dev.get_idcode()))
             
             self.initialized = True
-
-    def reconnect(self):
-        None # TODO:
-        # check to see if lost USB communications or somethingelse
-        # get version. if success, no re-initialization necesesary else try calling setup(). 
-
-    def reset_sram_error_count(self):
-        self.sram_errors_count = 0
-
-    def reset_register_error_count(self):
-        self.register_errors_count = 0        
-
-    def reset_fatal_error_count(self):
-        self.fatal_error_count
-
-    def reload_target(self):
-        return self.reload_target
 
     def load_target(self):
         if self.initialized == True:
@@ -97,6 +134,8 @@ class Stm32h7_Target_Tests:
         retValue = 0x0
         sram_errors = 0
         register_errors = 0
+        
+        retValue = self.EXAMINE_RET_CODE.SUCCESS
 
         try:
             sram_address = 0x24000000
@@ -150,7 +189,7 @@ class Stm32h7_Target_Tests:
             self.fatal_error_count += 1
             reinitialize_target = True
             print("Possible SWD Debug USB failure")
-            retValue = self.EXAMINE_RET_CODE.USB_ERROR
+            #   TODO: uncomment retValue = self.EXAMINE_RET_CODE.USB_ERROR
 
         # Successful. althought there could be bit errors. Instead of handling reinitialioze data, Let the parent
         # handle what needs to be done and let parent query each round. Perhaps the parents wants to accumulate
@@ -165,9 +204,6 @@ class Stm32h7_Target_Tests:
         if register_errors > 0:
             retValue |= self.EXAMINE_RET_CODE.REGISTER_BIT_ERRORS
 
-        # TODO: need to add register file test. 
-        else:
-            return self.EXAMINE_RET_CODE.SUCCESS
-
-    def generate_bitmap_result(self):
-        None
+        # TODO: need to add register file test.             
+        
+        return retValue
